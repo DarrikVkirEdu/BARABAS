@@ -5,17 +5,6 @@
  *
  * Published under "do whatever you want with it" license (aka public domain).
  *
- * Color coding for light group "BARABAS Notify":
- * - Red: storage 98% full
- * - Yellow: storage 75% full
- * - Blue: running out of uranium
- * - Magenta: refinery clogged
- * - Cyan: assembler clogged
- * - White: running out of materials
- * - Brown: oxygen leak detected
- * - Pink: unfinished/damaged blocks present
- * - Green: connection to base/ship detected
- *
  * To configure BARABAS, edit configuration in a text block called "BARABAS Config".
  *
  * To exclude a block from being affected by BARABAS, have its name start with "X".
@@ -27,7 +16,7 @@
  *   it is not recommended and may produce weird results.
  *
  * Optional requirements:
- * - Group of text/LCD panels or lights named "BARABAS Notify", used for
+ * - Group of text/LCD panels named "BARABAS Notify", used for
  *   notification and status reports.
  * - Text block named "BARABAS Config", used for storing configuration (if not
  *   present, automatic configuration will be used)
@@ -49,7 +38,7 @@ const int OP_MODE_WELDER = 0x8 | OP_MODE_SHIP;
 const int OP_MODE_TUG = 0x10 | OP_MODE_SHIP;
 const int OP_MODE_BASE = 0x100;
 
-int op_mode = OP_MODE_AUTO;
+int op_mode = OP_MODE_BASE;
 Decimal reactor_high_watermark = 0M;
 Decimal reactor_low_watermark = 0M;
 bool throw_out_stone = false;
@@ -165,59 +154,6 @@ readonly List < string > ore_types = new List < string > {
 
 readonly List < string > arc_furnace_ores = new List < string > {
 	COBALT, IRON, NICKEL
-};
-
-// ballpark values of "just enough" for each material
-readonly Dictionary < string, Decimal > material_thresholds = new Dictionary < string, Decimal > {
-	{
-		COBALT, 500M
-	}, {
-		GOLD, 100M
-	}, {
-		ICE, 25M
-	}, {
-		IRON, 5000M
-	}, {
-		MAGNESIUM, 100M
-	}, {
-		NICKEL, 1000M
-	}, {
-		PLATINUM, 10M
-	}, {
-		SILICON, 1000M
-	}, {
-		SILVER, 1000M
-	}, {
-		URANIUM, 10M
-	}, {
-		STONE, 5000M
-	},
-};
-
-readonly Dictionary < string, Decimal > ore_to_ingot_ratios = new Dictionary < string, Decimal > {
-	{
-		COBALT, 0.3M
-	}, {
-		GOLD, 0.01M
-	}, {
-		ICE, 0.006M
-	}, {
-		IRON, 0.7M
-	}, {
-		MAGNESIUM, 0.007M
-	}, {
-		NICKEL, 0.4M
-	}, {
-		PLATINUM, 0.005M
-	}, {
-		SILICON, 0.7M
-	}, {
-		SILVER, 0.1M
-	}, {
-		URANIUM, 0.007M
-	}, {
-		STONE, 0.9M
-	},
 };
 
 // statuses for ore and ingots
@@ -562,32 +498,6 @@ List < IMyTerminalBlock > getConnectors(bool force_update = false) {
 		consolidate(local_connectors[i].GetInventory(0));
 	}
 	return new List < IMyTerminalBlock > (local_connectors);
-}
-
-// get notification lights
-List < IMyTerminalBlock > getLights(bool force_update = false) {
-	if (local_lights != null && !force_update) {
-		return new List < IMyTerminalBlock > (local_lights);
-	}
-	// find our group
-	local_lights = new List < IMyTerminalBlock > ();
-	var groups = GridTerminalSystem.BlockGroups;
-	for (int i = 0; i < groups.Count; i++) {
-		var group = groups[i];
-		// skip groups we don't want
-		if (group.Name != "BARABAS Notify") {
-			continue;
-		}
-		var blocks = group.Blocks;
-		// we may find multiple Notify groups, as we may have a BARABAS-driven
-		// ships connected, so let's filter lights
-		filterLocalGrid < IMyLightingBlock > (blocks);
-
-		// now we know it's our lights group, so store it
-		local_lights = blocks;
-		break;
-	}
-	return new List < IMyTerminalBlock > (local_lights);
 }
 
 // get status report text panels
@@ -1253,7 +1163,7 @@ bool canAcceptOre(IMyInventory inv, string name) {
 	}
 
 	// if this is a priority ore, accept it unconditionally
-	if (can_use_ingots && storage_ingot_status[name] < material_thresholds[name]) {
+	if (can_use_ingots) {
 		return true;
 	}
 	// if no ore is priority, don't clog the refinery
@@ -1556,29 +1466,7 @@ bool pushToRemoteShipStorage(IMyInventory src, int srcIndex, Nullable < VRage.My
 	return false;
 }
 
-void pushAllToRemoteStorage() {
-	var storage = getStorage();
-	for (int i = 0; i < storage.Count; i++) {
-		var container = storage[i];
-		var inv = container.GetInventory(0);
-		var items = inv.GetItems();
-		for (int j = items.Count - 1; j >= 0; j--) {
-			var item = items[j];
-			if (isOre(item) && push_ore_to_base) {
-				pushToRemoteStorage(inv, j, null);
-			}
-			if (isIngot(item)) {
-				var type = item.Content.SubtypeName;
-				if (type != URANIUM && push_ingots_to_base) {
-					pushToRemoteStorage(inv, j, null);
-				}
-			}
-			if (isComponent(item) && push_components_to_base) {
-				pushToRemoteStorage(inv, j, null);
-			}
-		}
-	}
-}
+void pushAllToRemoteStorage() {;}
 
 void pullFromRemoteShipStorage() {
 	var storage = getRemoteShipStorage();
@@ -1605,29 +1493,7 @@ void pullFromRemoteShipStorage() {
 	}
 }
 
-void pushToRemoteShipStorage() {
-	var storage = getStorage();
-	for (int i = 0; i < storage.Count; i++) {
-		var container = storage[i];
-		var inv = container.GetInventory(0);
-		var items = inv.GetItems();
-		for (int j = items.Count - 1; j >= 0; j--) {
-			var item = items[j];
-			if (isOre(item) && pull_ore_from_base) {
-				pushToRemoteShipStorage(inv, j, null);
-			}
-			if (isIngot(item)) {
-				var type = item.Content.SubtypeName;
-				if (type != URANIUM && pull_ingots_from_base) {
-					pushToRemoteShipStorage(inv, j, null);
-				}
-			}
-			if (isComponent(item) && pull_components_from_base) {
-				pushToRemoteShipStorage(inv, j, null);
-			}
-		}
-	}
-}
+void pushToRemoteShipStorage() {;}
 
 void pullFromRemoteStorage() {
 	if (op_mode == OP_MODE_BASE) {
@@ -1669,53 +1535,7 @@ void emptyBlocks(List < IMyTerminalBlock > blocks) {
 	}
 }
 
-void fillWelders() {
-	var welders = getWelders();
-	int s_index = 0;
-
-	for (int i = 0; i < welders.Count; i++) {
-		Decimal cur_vol = (Decimal) welders[i].GetInventory(0).CurrentVolume * 1000M;
-		Decimal max_vol = (Decimal) welders[i].GetInventory(0).MaxVolume * 1000M;
-		Decimal target_volume = max_vol - 400M - cur_vol;
-		if (target_volume <= 0) {
-			continue;
-		}
-		var dst_inv = welders[i].GetInventory(0);
-		var storage = getStorage();
-		for (; s_index < storage.Count; s_index++) {
-			var container = storage[s_index];
-			var src_inv = container.GetInventory(0);
-			var items = src_inv.GetItems();
-			for (int j = items.Count - 1; j >= 0; j--) {
-				var item = items[j];
-				if (!isComponent(item)) {
-					continue;
-				}
-				if (target_volume <= 0) {
-					break;
-				}
-				Decimal amount = (Decimal) item.Amount - 1M;
-				// if it's peanuts, just send out everthing
-				if (amount < 2M) {
-					src_inv.TransferItemTo(dst_inv, j, null, true, null);
-					continue;
-				}
-
-				// send one and check load
-				Decimal old_vol = (Decimal) dst_inv.CurrentVolume * 1000M;
-				src_inv.TransferItemTo(dst_inv, j, null, true, (VRage.MyFixedPoint) 1);
-				Decimal new_vol = (Decimal) dst_inv.CurrentVolume * 1000M;
-				Decimal item_vol = new_vol - old_vol;
-				int target_amount = (int) Math.Floor(target_volume / item_vol);
-				src_inv.TransferItemTo(dst_inv, j, null, true, (VRage.MyFixedPoint) target_amount);
-				target_volume -= Math.Min(target_amount, amount) * item_vol;
-			}
-			if (target_volume <= 0) {
-				break;
-			}
-		}
-	}
-}
+void fillWelders() {;}
 
 void pushOreToStorage() {
 	var refineries = getAllRefineries();
@@ -1745,41 +1565,7 @@ Decimal getMaxPowerOutput(bool force_update = false) {
 }
 
 Decimal getMaxPowerDraw(bool force_update = false) {
-	if (!force_update) {
-		return max_power_draw;
-	}
-
-	Decimal power_draw = 0;
-
-	// go through all the blocks
-	List < IMyTerminalBlock > blocks = new List < IMyTerminalBlock > ();
-	GridTerminalSystem.GetBlocksOfType < IMyTerminalBlock > (blocks, localGridDumbFilter);
-
-	for (int i = 0; i < blocks.Count; i++) {
-		var block = blocks[i];
-		// if this is a thruster
-		if (block is IMyThrust) {
-			var typename = block.BlockDefinition.ToString();
-			Decimal thrust_draw;
-			bool found = thrust_power.TryGetValue(typename, out thrust_draw);
-			if (found) {
-				power_draw += thrust_draw;
-			} else {
-				throw new BarabasException("Unknown thrust type");
-			}
-		}
-		// it's a regular block
-		else {
-			power_draw += getBlockPowerUse(block);
-		}
-	}
-	// add 5% to account for various misc stuff like conveyors etc
-	power_draw *= 1.05M;
-
-	// now, check if we're not overflowing the reactors
-	max_power_draw = Math.Min(power_draw, getMaxPowerOutput());
-
-	return max_power_draw;
+	return getMaxPowerOutput(force_update);
 }
 
 Decimal getBlockPowerUse(IMyTerminalBlock block) {
@@ -2140,9 +1926,7 @@ void refineOre() {
 
 void reprioritizeOre() {
 	string low_wm_ore = null;
-	string high_wm_ore = null;
 	string low_wm_arc_ore = null;
-	string high_wm_arc_ore = null;
 	// if we know we want uranium, prioritize it
 	if (prioritize_uranium && ore_status[URANIUM] > 0) {
 		low_wm_ore = URANIUM;
@@ -2153,22 +1937,18 @@ void reprioritizeOre() {
 			continue;
 		}
 		bool arc = arc_furnace_ores.Contains(ore);
-		if (low_wm_ore == null && storage_ingot_status[ore] < material_thresholds[ore] && ore_status[ore] > 0) {
+		if (low_wm_ore == null && ore_status[ore] <= 0) {
 			low_wm_ore = ore;
-		} else if (high_wm_ore == null && storage_ingot_status[ore] < (material_thresholds[ore] * 5) && ore_status[ore] > 0) {
-			high_wm_ore = ore;
 		}
-		if (arc && low_wm_arc_ore == null && storage_ingot_status[ore] < material_thresholds[ore] && ore_status[ore] > 0) {
+		if (arc && low_wm_arc_ore == null && ore_status[ore] < 0) {
 			low_wm_arc_ore = ore;
-		} else if (arc && high_wm_arc_ore == null && storage_ingot_status[ore] < (material_thresholds[ore] * 5) && ore_status[ore] > 0) {
-			high_wm_arc_ore = ore;
 		}
-		if (high_wm_ore != null && low_wm_ore != null && high_wm_arc_ore != null && low_wm_arc_ore != null) {
+		if (low_wm_ore != null && low_wm_arc_ore != null) {
 			break;
 		}
 	}
-	if (high_wm_ore != null || low_wm_ore != null) {
-		var ore = low_wm_ore != null ? low_wm_ore : high_wm_ore;
+	if (low_wm_ore != null) {
+		var ore = low_wm_ore;
 		List < IMyTerminalBlock > refineries;
 		refineries = getRefineries();
 		for (int i = 0; i < refineries.Count; i++) {
@@ -2188,8 +1968,8 @@ void reprioritizeOre() {
 			}
 		}
 	}
-	if (high_wm_arc_ore != null || low_wm_arc_ore != null) {
-		var ore = low_wm_arc_ore != null ? low_wm_arc_ore : high_wm_arc_ore;
+	if (low_wm_arc_ore != null) {
+		var ore = low_wm_arc_ore;
 		List < IMyTerminalBlock > refineries;
 		refineries = getArcFurnaces();
 		for (int i = 0; i < refineries.Count; i++) {
@@ -2486,51 +2266,7 @@ void declogRefineries() {
 	}
 }
 
-void spreadLoad(List < IMyTerminalBlock > blocks) {
-	Decimal minLoad = 100, maxLoad = 0;
-	Decimal minVol = 0, maxVol = 0;
-	int minIndex = 0, maxIndex = 0;
-	for (int i = 0; i < blocks.Count; i++) {
-		Decimal load = (Decimal) blocks[i].GetInventory(0).CurrentVolume / (Decimal) blocks[i].GetInventory(0).MaxVolume;
-		if (load < minLoad) {
-			minIndex = i;
-			minLoad = load;
-			minVol = (Decimal) blocks[i].GetInventory(0).CurrentVolume * 1000M;
-		}
-		if (load > maxLoad) {
-			maxIndex = i;
-			maxLoad = load;
-			maxVol = (Decimal) blocks[i].GetInventory(0).CurrentVolume * 1000M;
-		}
-	}
-	// even out the load between biggest loaded drill
-	if (minIndex != maxIndex && (minLoad == 0 || maxLoad / minLoad > 1.1M)) {
-		var src_inv = blocks[maxIndex].GetInventory(0);
-		var dst_inv = blocks[minIndex].GetInventory(0);
-		var target_volume = (maxVol - minVol) / 2M;
-		var items = src_inv.GetItems();
-		for (int i = items.Count - 1; i >= 0; i--) {
-			if (target_volume <= 0) {
-				return;
-			}
-			Decimal amount = (Decimal) items[i].Amount - 1M;
-			// if it's peanuts, just send out everything
-			if (amount < 1M) {
-				src_inv.TransferItemTo(dst_inv, i, null, true, null);
-				continue;
-			}
-
-			// send one and check load
-			Decimal cur_vol = (Decimal) dst_inv.CurrentVolume * 1000M;
-			src_inv.TransferItemTo(dst_inv, i, null, true, (VRage.MyFixedPoint) 1);
-			Decimal new_vol = (Decimal) dst_inv.CurrentVolume * 1000M;
-			Decimal item_vol = new_vol - cur_vol;
-			int target_amount = (int) Math.Floor(target_volume / item_vol);
-			src_inv.TransferItemTo(dst_inv, i, null, true, (VRage.MyFixedPoint) target_amount);
-			target_volume -= Math.Min(target_amount, amount) * item_vol;
-		}
-	}
-}
+void spreadLoad(List < IMyTerminalBlock > blocks) {;}
 
 /**
  * Oxygen
@@ -2566,7 +2302,6 @@ void resetConfig() {
 	push_ingots_to_base = false;
 	push_components_to_base = false;
 	throw_out_stone = true;
-	material_thresholds[STONE] = 5000M;
 	reactor_low_watermark = 0;
 	reactor_high_watermark = 0;
 }
@@ -2657,7 +2392,6 @@ void addAlert(int level) {
 			}
 		}
 	}
-	showAlertColor(cur_alert.Value.color);
 	status_report[STATUS_ALERT] = text;
 }
 
@@ -2681,320 +2415,12 @@ void removeAlert(int level) {
 		}
 	}
 	status_report[STATUS_ALERT] = text;
-	if (!alert.HasValue) {
-		hideAlertColor();
-	} else {
-		showAlertColor(alert.Value.color);
-	}
 }
 
-string generateConfiguration() {
-	StringBuilder sb = new StringBuilder();
-
-	if (op_mode == OP_MODE_BASE) {
-		config_options[OP_MODE] = "base";
-	} else if (op_mode == OP_MODE_SHIP) {
-		config_options[OP_MODE] = "ship";
-	} else if (op_mode == OP_MODE_DRILL) {
-		config_options[OP_MODE] = "drill";
-	} else if (op_mode == OP_MODE_WELDER) {
-		config_options[OP_MODE] = "welder";
-	} else if (op_mode == OP_MODE_GRINDER) {
-		config_options[OP_MODE] = "grinder";
-	} else if (op_mode == OP_MODE_TUG) {
-		config_options[OP_MODE] = "tug";
-	}
-	config_options[REACTOR_HIGH_WATERMARK] = Convert.ToString(reactor_high_watermark);
-	config_options[REACTOR_LOW_WATERMARK] = Convert.ToString(reactor_low_watermark);
-	config_options[PUSH_ORE] = Convert.ToString(push_ore_to_base);
-	config_options[PUSH_INGOTS] = Convert.ToString(push_ingots_to_base);
-	config_options[PUSH_COMPONENTS] = Convert.ToString(push_components_to_base);
-	config_options[PULL_ORE] = Convert.ToString(pull_ore_from_base);
-	config_options[PULL_INGOTS] = Convert.ToString(pull_ingots_from_base);
-	config_options[PULL_COMPONENTS] = Convert.ToString(pull_components_from_base);
-	config_options[SORT_STORAGE] = Convert.ToString(sort_storage);
-	if (throw_out_stone) {
-		if (material_thresholds[STONE] == 0) {
-			config_options[KEEP_STONE] = "none";
-		} else {
-			config_options[KEEP_STONE] = Convert.ToString(Math.Floor((material_thresholds[STONE] * 5) / CHUNK_SIZE));
-		}
-	} else {
-		config_options[KEEP_STONE] = "all";
-	}
-
-	// currently selected operation mode
-	sb.AppendLine("# Operation mode");
-	sb.AppendLine("# Can be auto, base, ship, tug, drill, welder or grinder");
-	var key = OP_MODE;
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = REACTOR_HIGH_WATERMARK;
-	sb.AppendLine("# Amount of uranium in \"full\" reactor, in minutes.");
-	sb.AppendLine("# Can be a positive number, zero for automatic.");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = REACTOR_LOW_WATERMARK;
-	sb.AppendLine("# Amount of uranium in \"empty\" reactor, in minutes.");
-	sb.AppendLine("# Can be a positive number, zero for automatic.");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = KEEP_STONE;
-	sb.AppendLine("# How much stone to keep, in tons.");
-	sb.AppendLine("# Can be a positive number, \"none\", \"all\" or \"auto\".");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = SORT_STORAGE;
-	sb.AppendLine("# Automatically sort items in storage containers.");
-	sb.AppendLine("# Can be True or False");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	sb.AppendLine("#");
-	sb.AppendLine("# Values below this line are only applicable to");
-	sb.AppendLine("# ships when connected to base or other ships.");
-	sb.AppendLine("#");
-	sb.AppendLine();
-	key = PUSH_ORE;
-	sb.AppendLine("# Push ore to base storage");
-	sb.AppendLine("# In tug mode, also pull ore from ships");
-	sb.AppendLine("# Can be True or False");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = PUSH_INGOTS;
-	sb.AppendLine("# Push ingots to base storage");
-	sb.AppendLine("# In tug mode, also pull ingots from ships");
-	sb.AppendLine("# Can be True or False");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = PUSH_COMPONENTS;
-	sb.AppendLine("# Push components to base storage");
-	sb.AppendLine("# In tug mode, also pull components from ships");
-	sb.AppendLine("# Can be True or False");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = PULL_ORE;
-	sb.AppendLine("# Pull ore from base storage");
-	sb.AppendLine("# In tug mode, also push ore to ships");
-	sb.AppendLine("# Can be True or False");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = PULL_INGOTS;
-	sb.AppendLine("# Pull ingots from base storage");
-	sb.AppendLine("# In tug mode, also push ingots to ships");
-	sb.AppendLine("# Can be True or False");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-	key = PULL_COMPONENTS;
-	sb.AppendLine("# Pull components from base storage");
-	sb.AppendLine("# In tug mode, also push components to ships");
-	sb.AppendLine("# Can be True or False");
-	sb.AppendLine(key + " = " + config_options[key]);
-	sb.AppendLine();
-
-	return sb.ToString();
-}
-
-void rebuildConfiguration() {
-	var block = getConfigBlock();
-	if (block == null) {
-		return;
-	}
-
-	// generate config
-	string text = generateConfiguration();
-
-	// put text back into the text block
-	block.WritePublicText(text);
-	block.WritePublicTitle("BARABAS Configuration");
-}
-
-void parseLine(string line) {
-	string[] strs = line.Split('=');
-	if (strs.Length != 2) {
-		throw new BarabasException("Invalid number of tokens: " + line);
-	}
-	var str = strs[0].ToLower().Trim();
-	var strval = strs[1].ToLower().Trim();
-	// backwards compatibility
-	if (str == "ingots per reactor" || str == "chunk size") {
-		return;
-	}
-	if (str == "throw out stone") {
-		if (strval == "False") {
-			throw_out_stone = false;
-			material_thresholds[STONE] = 0;
-		} else {
-			throw_out_stone = true;
-			material_thresholds[STONE] = 5000M;
-		}
-		return;
-	}
-	if (!config_options.ContainsKey(str)) {
-		throw new BarabasException("Invalid config option: " + str);
-	}
-	// now, try to parse it
-	bool fail = false;
-	bool bval, bparse, fparse;
-	Decimal fval;
-	bparse = Boolean.TryParse(strval, out bval);
-	fparse = Decimal.TryParse(strval, out fval);
-	// op mode
-	if (str == OP_MODE) {
-		if (strval == "base") {
-			if (op_mode != OP_MODE_BASE) {
-				op_mode = OP_MODE_BASE;
-				crisis_mode = CRISIS_MODE_NONE;
-			}
-			return;
-		} else if (strval == "ship") {
-			if (op_mode != OP_MODE_SHIP) {
-				op_mode = OP_MODE_SHIP;
-				crisis_mode = CRISIS_MODE_NONE;
-			}
-			return;
-		} else if (strval == "drill") {
-			if (op_mode != OP_MODE_DRILL) {
-				op_mode = OP_MODE_DRILL;
-				crisis_mode = CRISIS_MODE_NONE;
-			}
-			return;
-		} else if (strval == "welder") {
-			if (op_mode != OP_MODE_WELDER) {
-				op_mode = OP_MODE_WELDER;
-				crisis_mode = CRISIS_MODE_NONE;
-			}
-			return;
-		} else if (strval == "grinder") {
-			if (op_mode != OP_MODE_GRINDER) {
-				op_mode = OP_MODE_GRINDER;
-				crisis_mode = CRISIS_MODE_NONE;
-			}
-			return;
-		} else if (strval == "tug") {
-			if (op_mode != OP_MODE_TUG) {
-				op_mode = OP_MODE_TUG;
-				crisis_mode = CRISIS_MODE_NONE;
-			}
-			return;
-		} else if (strval == "auto") {
-			op_mode = OP_MODE_AUTO;
-			crisis_mode = CRISIS_MODE_NONE;
-			return;
-		} else {
-			fail = true;
-		}
-	} else if (str == REACTOR_HIGH_WATERMARK) {
-		if (fparse && fval >= 0) {
-			if (fval != reactor_high_watermark) {
-				int index = Array.IndexOf(states, s_uranium);
-				skip_steps[index] = 0;
-			}
-			reactor_high_watermark = fval;
-			return;
-		} else {
-			fail = true;
-		}
-	} else if (str == REACTOR_LOW_WATERMARK) {
-		if (fparse && fval >= 0) {
-			if (fval != reactor_low_watermark) {
-				int index = Array.IndexOf(states, s_uranium);
-				skip_steps[index] = 0;
-			}
-			reactor_low_watermark = fval;
-			return;
-		} else {
-			fail = true;
-		}
-	} else if (str == KEEP_STONE) {
-		if (fparse && fval > 0) {
-			throw_out_stone = true;
-			material_thresholds[STONE] = (Decimal) Math.Floor((fval * 1000M) / 5);
-		} else if (strval == "all") {
-			throw_out_stone = false;
-			material_thresholds[STONE] = 5000M;
-		} else if (strval == "none") {
-			throw_out_stone = true;
-			material_thresholds[STONE] = 0;
-		} else if (strval == "auto") {
-			throw_out_stone = true;
-			material_thresholds[STONE] = 5000M;
-		} else {
-			fail = true;
-		}
-	}
-	// bools
-	else if (bparse) {
-		if (str == PUSH_ORE) {
-			push_ore_to_base = bval;
-		} else if (str == PUSH_INGOTS) {
-			push_ingots_to_base = bval;
-		} else if (str == PUSH_COMPONENTS) {
-			push_components_to_base = bval;
-		} else if (str == PULL_ORE) {
-			pull_ore_from_base = bval;
-		} else if (str == PULL_INGOTS) {
-			pull_ingots_from_base = bval;
-		} else if (str == PULL_COMPONENTS) {
-			pull_components_from_base = bval;
-		} else if (str == SORT_STORAGE) {
-			sort_storage = bval;
-		}
-	} else {
-		fail = true;
-	}
-	if (fail) {
-		throw new BarabasException("Invalid config value: " + strval);
-	}
-}
+void rebuildConfiguration() {;}
 
 // this will find a BARABAS Config block and read its configuration
-void parseConfiguration() {
-	// find the block, blah blah
-	var block = getConfigBlock();
-	if (block == null) {
-		return;
-	}
-	string text = block.GetPublicText();
-
-	// check if the text is empty
-	if (text.Trim().Length != 0) {
-		var lines = text.Split('\n');
-		for (int i = 0; i < lines.Length; i++) {
-			var line = lines[i].Trim();
-
-			// skip comments and empty lines
-			if (line.StartsWith("#") || line.Length == 0) {
-				continue;
-			}
-			parseLine(line);
-		}
-	}
-}
-
-void showAlertColor(Color c) {
-	var lights = getLights();
-	for (int i = 0; i < lights.Count; i++) {
-		var light = lights[i] as IMyLightingBlock;
-		if (light.GetValue < Color > ("Color").Equals(c) && light.Enabled) {
-			continue;
-		}
-		light.SetValue("Color", c);
-		// make sure we switch the color of the texture as well
-		light.ApplyAction("OnOff_Off");
-		light.ApplyAction("OnOff_On");
-	}
-}
-
-void hideAlertColor() {
-	var lights = getLights();
-	for (int i = 0; i < lights.Count; i++) {
-		var light = lights[i] as IMyLightingBlock;
-		if (!light.Enabled) {
-			continue;
-		}
-		light.ApplyAction("OnOff_Off");
-	}
-}
+void parseConfiguration() {;}
 
 void turnOffConveyors() {
 	var blocks = getBlocks();
@@ -3068,14 +2494,8 @@ bool s_refreshState() {
 	var tank_count = getOxygenTanks(true).Count;
 	var vent_count = getAirVents(true).Count;
 	can_use_oxygen = tank_count > 0 && vent_count > 0;
-	if (can_use_oxygen) {
-		material_thresholds[ICE] = 25M;
-	} else {
-		material_thresholds[ICE] = 0;
-	}
 	getTrashConnector(true);
 	getStorage(true);
-	getLights(true);
 	if (has_reactors) {
 		getMaxPowerOutput(true);
 		getMaxPowerDraw(true);
@@ -3092,9 +2512,9 @@ bool s_refreshState() {
 		autoConfigure();
 	}
 	if ((op_mode & OP_MODE_SHIP) > 0) {
-		getPB().SetCustomName("BARABAS Ship CPU");
+		getPB().SetCustomName("Programming Block-BARABAS Ship CPU");
 	} else {
-		getPB().SetCustomName("BARABAS Base CPU");
+		getPB().SetCustomName("Programming Block-BARABAS Base CPU");
 	}
 	configureWatermarks();
 	rebuildConfiguration();
@@ -3228,7 +2648,7 @@ bool s_materials() {
 		// check if we want to throw out extra stone
 		if (ore_status[STONE] > 0) {
 			if (has_refineries) {
-				bool haveEnoughStone = (ingot_status[STONE] + storage_ore_status[STONE] * ore_to_ingot_ratios[STONE]) > (material_thresholds[STONE] * 5);
+				bool haveEnoughStone = true;
 				if (haveEnoughStone) {
 					// prevent us from throwing out something of value
 					if (!trashHasUsefulItems() && startThrowing()) {
@@ -3237,7 +2657,7 @@ bool s_materials() {
 					}
 				}
 			} else {
-				if (ore_status[STONE] > material_thresholds[STONE] * 5) {
+				if (true) {
 					if (startThrowing()) {
 						throwOutOre(STONE);
 						result = true;
@@ -3261,24 +2681,7 @@ bool s_materials() {
 }
 
 bool s_tools() {
-	bool result = false;
-	var drills = getDrills();
-	var grinders = getGrinders();
-	if (has_drills) {
-		result = true;
-		emptyBlocks(drills);
-		spreadLoad(drills);
-	}
-	if (has_grinders) {
-		result = true;
-		emptyBlocks(grinders);
-		spreadLoad(grinders);
-	}
-	if (has_welders && op_mode == OP_MODE_WELDER) {
-		result = true;
-		fillWelders();
-	}
-	return result;
+	return true;
 }
 
 bool s_storage() {
@@ -3323,6 +2726,8 @@ string roundStr(Decimal val) {
 }
 
 bool s_updateMaterialStats() {
+  if (skip_steps[current_state] == 0) {
+	skip_steps[current_state] = 5;
 	Decimal uranium_in_reactors = 0;
 	// clear stats
 	for (int i = 0; i < ore_types.Count; i++) {
@@ -3383,7 +2788,7 @@ bool s_updateMaterialStats() {
 		if (ore == URANIUM) {
 			total_ingots -= uranium_in_reactors;
 		}
-		var total = total_ingots + (total_ore * ore_to_ingot_ratios[ore]);
+		var total = total_ingots;
 
 		if (has_status_panels) {
 			if (op_mode != OP_MODE_BASE && total == 0) {
@@ -3399,16 +2804,6 @@ bool s_updateMaterialStats() {
 				sb.Append(String.Format(" ({0})", roundStr(total)));
 			}
 		}
-
-		if (can_use_ingots && total < material_thresholds[ore]) {
-			if (ore == ICE && !can_use_oxygen) {
-				continue;
-			}
-			alert = true;
-			if (has_status_panels) {
-				sb.Append(" WARNING!");
-			}
-		}
 	}
 	if (alert) {
 		addAlert(WHITE_ALERT);
@@ -3416,6 +2811,10 @@ bool s_updateMaterialStats() {
 		removeAlert(WHITE_ALERT);
 	}
 	status_report[STATUS_MATERIAL] = sb.ToString();
+  }
+  else {
+  	skip_steps[current_state]--;
+  }
 	return true;
 }
 
