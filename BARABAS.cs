@@ -1,5 +1,5 @@
 /*
- * BARABAS v1.31pre1
+ * BARABAS v1.4alpha1
  *
  * (Burillo's Automatic Resource Administration for BAses and Ships)
  *
@@ -505,7 +505,8 @@ List < IMyTerminalBlock > getTextPanels(bool force_update = false) {
 	if (local_text_panels != null && !force_update) return new List < IMyTerminalBlock > (local_text_panels);
 	// find our group
 	local_text_panels = new List < IMyTerminalBlock > ();
-	var groups = GridTerminalSystem.BlockGroups;
+	var groups = new List<IMyBlockGroup>();
+	GridTerminalSystem.GetBlockGroups(groups);
 	for (int i = 0; i < groups.Count; i++) {
 		var group = groups[i];
 		// skip groups we don't want
@@ -896,7 +897,7 @@ List < ItemHelper > getAllInventories() {
 	for (int i = 0; i < blocks.Count; i++) {
 		var block = blocks[i];
 		// skip blocks that don't have inventory
-		if (!block.HasInventory()) {
+		if ((block as IMyInventoryOwner) != null && !block.HasInventory()) {
 			continue;
 		}
 		int invCount = block.GetInventoryCount();
@@ -1550,6 +1551,7 @@ void pushOreToStorage() {
 /**
  * Uranium & reactors
  */
+
 Decimal getMaxPowerOutput(bool force_update = false) {
 	if (!force_update) {
 		return max_power_output;
@@ -1565,7 +1567,27 @@ Decimal getMaxPowerOutput(bool force_update = false) {
 }
 
 Decimal getMaxPowerDraw(bool force_update = false) {
-	return getMaxPowerOutput(force_update);
+		if (!force_update) {
+		return max_power_draw;
+	}
+
+	Decimal power_draw = 0;
+
+	// go through all the blocks
+	List < IMyTerminalBlock > blocks = new List < IMyTerminalBlock > ();
+	GridTerminalSystem.GetBlocksOfType < IMyTerminalBlock > (blocks, localGridDumbFilter);
+
+	for (int i = 0; i < blocks.Count; i++) {
+		var block = blocks[i];
+		power_draw += getBlockPowerUse(block);
+	}
+	// add 5% to account for various misc stuff like conveyors etc
+	power_draw *= 1.05M;
+
+	// now, check if we're not overflowing the reactors
+	max_power_draw = Math.Min(power_draw, getMaxPowerOutput());
+
+	return max_power_draw;
 }
 
 Decimal getBlockPowerUse(IMyTerminalBlock block) {
@@ -2519,17 +2541,6 @@ bool s_refreshState() {
 	configureWatermarks();
 	rebuildConfiguration();
 
-	// local refresh finished, now see if we have any remote grids
-	findRemoteGrids();
-	// signal that we have something connected to us
-	if (connected) {
-		getRemoteStorage(true);
-		getRemoteShipStorage(true);
-		addAlert(GREEN_ALERT);
-	} else {
-		removeAlert(GREEN_ALERT);
-	}
-
 	if (has_damaged_blocks) {
 		addAlert(PINK_ALERT);
 	} else {
@@ -2547,6 +2558,20 @@ bool s_refreshState() {
 	if (pull_components_from_base && push_components_to_base) {
 		throw new BarabasException("Invalid configuration - " +
 			"pull_components_from_base and push_components_to_base both set to \"true\"");
+	}
+	return true;
+}
+
+bool s_refreshRemote() {
+	// local refresh finished, now see if we have any remote grids
+	findRemoteGrids();
+	// signal that we have something connected to us
+	if (connected) {
+		getRemoteStorage(true);
+		getRemoteShipStorage(true);
+		addAlert(GREEN_ALERT);
+	} else {
+		removeAlert(GREEN_ALERT);
 	}
 	return true;
 }
@@ -2826,6 +2851,7 @@ void Main() {
 		// kick off state machine
 		states = new Func < bool > [] {
 			s_refreshState,
+			s_refreshRemote,
 			s_updateMaterialStats,
 			s_uranium,
 			s_refineries,
